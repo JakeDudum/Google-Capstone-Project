@@ -1,0 +1,277 @@
+---
+title: "Google Capstone Project Case Study 1"
+output: html_notebook
+---
+
+### ASK
+
+--- 
+
+Determine the key differences between how annual members and casual riders use Cyclistic bikes in order to increase the conversion rate of casual riders into annual members.
+
+
+### PREPARE
+
+--- 
+
+As part of my analysis I will be using the previous 12 months of Cyclistic trip data which covers from July 2022 to June 2023. This data set includes information on every ride tracked by Cyclistic which includes start and end station names and ids, start and end latitude and longitude, the type of the rider (member/casual), the type of bike ridden, as well as the start and end time for the trip. The data is ROCCC (Reliable, Original, Comprehensive, Current and Cited) as it is gathered from GPS of the bikes and stations themselves, includes all relevant data to the bike trips, and is the latest available data to use.
+
+
+### PROCESS
+
+---
+
+I initially was using Google Sheets for my processing, but due to the sheer size of the files not working properly with Google Sheets I have opted to use R studio in order to clean and process the data properly. I was able to view one of the smaller sized csv files and explore the data through it. My initial exploring found that the data had start and end station location and ids missing for many rows, but as these are not necessary for my analysis I will continue on verifying and processing the rest of the data in R as follows:
+
+
+Installed basic R packages.
+
+```{r}
+install.packages("dplyr")
+```
+```{r}
+install.packages("tidyverse")
+```
+
+```{r}
+library("dplyr")
+```
+
+```{r}
+library("tidyverse")
+```
+
+
+Read in all of the csv files for Cyclistic containing the most recent available data for the past 12 months with the latest being June of 2023.
+
+```{r}
+jul <- read.csv("2022-07.csv")
+aug <- read.csv("2022-08.csv")
+sep <- read.csv("2022-09.csv")
+oct <- read.csv("2022-10.csv")
+nov <- read.csv("2022-11.csv")
+dec <- read.csv("2022-12.csv")
+jan <- read.csv("2023-01.csv")
+feb <- read.csv("2023-02.csv")
+mar <- read.csv("2023-03.csv")
+apr <- read.csv("2023-04.csv")
+may <- read.csv("2023-05.csv")
+jun <- read.csv("2023-06.csv")
+bike_df <- rbind(jul, aug, sep, oct, nov, dec, jan, feb, mar, apr, may, jun)
+```
+
+
+Viewed the data to ensure all files were read properly and combined without any major errors. Also made note of column names and types.
+
+```{r}
+View(bike_df)
+str(bike_df)
+summary(bike_df)
+```
+
+
+Destructured $started_at from Date Time format into new separate columns for day, month, year, and specific day of the week.
+
+```{r}
+bike_df$date <- as.Date(bike_df$started_at) #The default format is yyyy-mm-dd
+bike_df$month <- format(as.Date(bike_df$date), "%m")
+bike_df$day <- format(as.Date(bike_df$date), "%d")
+bike_df$year <- format(as.Date(bike_df$date), "%Y")
+bike_df$day_of_week <- format(as.Date(bike_df$date), "%A")
+```
+
+
+Added new column to calculate the length of each ride for use later on in analysis using the difference between $ended_at and $started_at columns.
+
+```{r}
+bike_df$ride_length <- difftime(bike_df$ended_at, bike_df$started_at)
+```
+
+
+Converted resulting column from 'difftime chr' type to appropriate 'num' type.
+
+```{r}
+bike_df$ride_length <- as.numeric(as.character(bike_df$ride_length))
+```
+
+
+Ensured successful conversion for $ride_length column.
+
+```{r}
+is.numeric(bike_df$ride_length)
+```
+
+
+Converted $ride_length column to minutes instead of seconds for better readability by dividing the number in the column by 60.
+```{r}
+bike_df$ride_length <- bike_df$ride_length/60
+```
+
+
+Cleaned data by removing any and all instances of station name being "HQ QR" or negative ride lengths.
+
+```{r}
+bike_df_v2 <- bike_df[!(bike_df$start_station_name == "HQ QR" | bike_df$ride_length<0),]
+```
+
+
+Removed unnecessary columns not needed for analysis to reduce clutter.
+
+```{r}
+bike_df_v2 <- bike_df_v2 %>%  
+  select(-c(start_lat, start_lng, end_lat, end_lng, ride_id, start_station_id, end_station_id))
+str(bike_df_v2)
+```
+
+
+### ANALYZE
+
+--- 
+
+I began my analysis by looking at a summary of the $ride_length column and followed it up by breaking it down into a comparison of member statistics against casual statistics to see if there were any noticeable trends.
+
+```{r}
+summary(bike_df_v2$ride_length)
+aggregate(bike_df_v2$ride_length ~ bike_df_v2$member_casual, FUN = mean)
+aggregate(bike_df_v2$ride_length ~ bike_df_v2$member_casual, FUN = median)
+aggregate(bike_df_v2$ride_length ~ bike_df_v2$member_casual, FUN = max)
+aggregate(bike_df_v2$ride_length ~ bike_df_v2$member_casual, FUN = min)
+```
+
+Right away this gave us some interesting insights on member and casual ride usage. The elephant in the room though appeared to be the max ride length for casuals coming in at over 41,000 minutes in comparison to members whose max ride length barely passes 1,500 which is less than even 5% of the max casual ride length. In order to make sure there were no anomalies with this ride length further analysis was needed.
+
+```{r}
+sum(bike_df_v2$ride_length > 40000)
+```
+
+The result gave us only one record among over 5.7 million entries that were over 40,000 for ride length. I decided to take it further and check the count for other anomalies.
+
+```{r}
+sum(bike_df_v2$ride_length > 30000)
+sum(bike_df_v2$ride_length > 20000)
+sum(bike_df_v2$ride_length > 10000)
+```
+
+Interestingly enough there did seem to be other users whose ride length was abnormally high. In order to make sure these abnormalities did not radically effect any part of my analysis I reran the aggregate functions but excluded the abnormalities to see how much of an impact they actually had.
+
+```{r}
+bike_df_v2 %>% 
+    filter(ride_length < 40000 & member_casual == 'casual') %>%
+    aggregate(ride_length ~ member_casual, FUN = mean)
+bike_df_v2 %>% 
+    filter(ride_length < 30000 & member_casual == 'casual') %>%
+    aggregate(ride_length ~ member_casual, FUN = mean)
+bike_df_v2 %>% 
+    filter(ride_length < 20000 & member_casual == 'casual') %>%
+    aggregate(ride_length ~ member_casual, FUN = mean)
+bike_df_v2 %>% 
+    filter(ride_length < 10000 & member_casual == 'casual') %>%
+    aggregate(ride_length ~ member_casual, FUN = mean)
+```
+
+The first few tests indicated only a minor difference, but once ride lengths greater than 10,000 were excluded the mean dropped by over three whole minutes. Ultimately I decided to proceed along with my analysis as excluding the abnormal data did not change the result of the initial analysis which showed that casuals on average have a ride length of about double that of members.
+
+Next I decided to analyze ride length by day and month to see if there were any major differences between members and casuals.
+
+```{r}
+aggregate(bike_df_v2$ride_length ~ bike_df_v2$member_casual + bike_df_v2$day_of_week, FUN = mean)
+```
+
+The result while useful was unordered as the days simply jumped around and were not in standard chronological order starting with Sunday and ending with Saturday. I decided to fix this and then rerun the function.
+
+```{r}
+bike_df_v2$day_of_week <- ordered(bike_df_v2$day_of_week, levels=c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))
+aggregate(bike_df_v2$ride_length ~ bike_df_v2$member_casual + bike_df_v2$day_of_week, FUN = mean)
+```
+
+This demonstrated a very noticeable difference in casuals ride length increasing drastically on weekends compared to weekdays and members ride length echoed similar results although much less drastic.
+
+Next I decided to explore the differences between weekends and weekdays further by looking at not just the duration, but also the number of rides made for each day.
+
+```{r}
+bike_df_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>%  #creates weekday field using wday()
+  group_by(member_casual, weekday) %>%                  #groups by usertype and weekday
+  summarise(number_of_rides = n()							          #calculates the number of rides and average duration 
+  ,average_duration = mean(ride_length)) %>% 		        # calculates the average duration
+  arrange(member_casual, weekday)	                      # sorts
+```
+
+This gives us a great insight into how members differ from casuals as the number of rides for members increases during the weekdays actually peaking on Wednesday. The exact opposite it true for casuals where their number of rides decreases during the weekdays and peaks on the weekends during Saturday. 
+
+I decided to further explore this by taking a look at the number of rides for members and casuals for each month.
+
+```{r}
+bike_df_v2 %>% 
+  group_by(member_casual, month) %>%            #groups by usertype and month
+  summarise(number_of_rides = n()) %>% 					#calculates the number of rides and average duration
+  arrange(member_casual, month)	                # sorts
+```
+
+Once again a very obvious trend emerges where the number of rides peaks for both members and casuals during the summer time months and plummets during the winter months. 
+
+### SHARE
+
+--- 
+
+I created the following charts in order to visualize my findings from my analysis and get a better idea of the relationships within the data. 
+
+First add scales library for better labeling of numbers.
+
+```{r}
+library(scales)
+```
+
+First chart for visualizing the number of rides for each day comparing members to casuals.
+
+```{r}
+bike_df_v2 %>% 
+    mutate(weekday = wday(started_at, label = TRUE)) %>% 
+    group_by(member_casual, weekday) %>% 
+    summarise(number_of_rides = n()) %>% 
+    arrange(member_casual, weekday)  %>% 
+    ggplot(aes(x = weekday, y = number_of_rides, fill = member_casual)) +
+    geom_col(position = "dodge") +
+    scale_y_continuous(labels = label_comma()) +
+    labs(y = "number of rides", fill = "usertype", title = "Members v Casuals Daily Number of Rides")
+```
+
+Second chart to visualize the average duration of each ride during the week for members and casuals.
+
+```{r}
+bike_df_v2 %>% 
+  mutate(weekday = wday(started_at, label = TRUE)) %>% 
+  group_by(member_casual, weekday) %>% 
+  summarise(number_of_rides = n(), average_duration = mean(ride_length)) %>% 
+  arrange(member_casual, weekday)  %>% 
+  ggplot(aes(x = weekday, y = average_duration, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  labs(y = "average duration", fill = "usertype", title = "Members v Casuals Average Ride Length")
+```
+
+Third and last chart to visualize the number of ride for each usertype throughout the year.
+
+```{r}
+bike_df_v2 %>% 
+  group_by(member_casual, month) %>%            
+  summarise(number_of_rides = n()) %>% 					
+  arrange(member_casual, month)	%>%
+  ggplot(aes(x = month, y = number_of_rides, fill = member_casual)) +
+  geom_col(position = "dodge") +
+  scale_y_continuous(labels = label_comma()) +
+  labs(y = "number of rides", fill = "usertype", title = "Members v Casuals Monthly Number of Rides")
+```
+
+My visualizations further reinforce and clearly demonstrate a key difference between members and casuals ridership as well as a glaring similarity. Current members favor the middle of the week while current casual riders prefer the weekend. Both members and casuals alike take more rides during the middle of the year during the summertime and take less rides during the beginning and end of the year when the the weather is far colder.   
+
+### ACT
+
+--- 
+
+Based upon my analysis and findings I came up with the following three recommendations for the company:
+
+1. Currently membership is limited to an annual pass. In order to increase membership Cyclistic should offer a bi annual membership or summertime membership that lasts six months. The optimal time frame for such a membership would last from May to September which have the most number of rides.
+
+2. Casuals tend to prefer the weekends for their rides. Cyclistic should lean into this and offer a weekend only membership for Fridays-Sundays at a discounted price.
+
+3. Casuals on average take longer trips and fewer of them throughout the week. Cyclistic should offer a membership centered around this by offering a cheaper annual membership option with restrictions on how many rides and the max duration of each ride. This would enable casuals who already use the service within the restrictions to convert into members with the possibility of switching to the upgraded full price membership.
